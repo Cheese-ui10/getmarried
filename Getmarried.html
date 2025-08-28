@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Virtual Marriage Ceremony</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- PeerJS CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Georgia', serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .screen { display: none; width: 100%; height: 100%; text-align: center; padding: 2rem; }
+    .active { display: block; }
+
+    /* Backgrounds */
+    #lobby {
+      background: radial-gradient(circle at top, #000, #111);
+      color: #0f0;
+    }
+    #waiting {
+      background: radial-gradient(circle at top, #111, #222);
+      color: #0f0;
+    }
+    #ceremony {
+      background: linear-gradient(135deg, #ffdde1, #ee9ca7);
+      color: #222;
+      position: relative;
+    }
+
+    h1, h2 { text-shadow: 0 0 8px rgba(0,0,0,0.5); }
+    input, button {
+      margin: .5rem; padding: .7rem 1rem; border: none; border-radius: 8px;
+      font-size: 1rem; background: #fff; color: #111; box-shadow: 0 0 5px #555 inset;
+    }
+    button:hover { background: #222; color: #fff; cursor: pointer; }
+    .user-list { margin-top: 1rem; font-size: 1.1rem; }
+    .chat { border-top: 1px solid #444; margin-top: 1rem; padding-top: 1rem; height: 25vh; overflow-y: auto; text-align: left; background: rgba(255,255,255,0.7); }
+    .reaction { font-size: 1.5rem; margin: 0 .3rem; cursor: pointer; }
+    .ceremony-scene { font-size: 2rem; margin-top: 2rem; }
+
+    /* Floating hearts */
+    .heart {
+      position: absolute;
+      font-size: 2rem;
+      animation: floatUp 5s linear forwards;
+    }
+    @keyframes floatUp {
+      from { transform: translateY(100vh) scale(1); opacity: 1; }
+      to { transform: translateY(-10vh) scale(0.5); opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Lobby Screen -->
+  <div id="lobby" class="screen active">
+    <h1>💍 Welcome to the Virtual Marriage 💍</h1>
+    <input id="username" placeholder="Enter your name" />
+    <div>
+      <button onclick="createRoom()">Create Ceremony Room</button>
+      <button onclick="joinRoom()">Join Ceremony Room</button>
+    </div>
+    <input id="roomInput" placeholder="Enter Room ID to Join" style="display:none;" />
+  </div>
+
+  <!-- Waiting Room -->
+  <div id="waiting" class="screen">
+    <h2>Waiting Room</h2>
+    <p id="roomCode"></p>
+    <div class="user-list" id="userList"></div>
+    <button onclick="startCeremony()">Begin Ceremony</button>
+  </div>
+
+  <!-- Ceremony Screen -->
+  <div id="ceremony" class="screen">
+    <h2 id="ceremonyTitle">The Ceremony Begins</h2>
+    <div class="ceremony-scene" id="ceremonyScene"></div>
+    <div class="chat" id="chatBox"></div>
+    <input id="chatInput" placeholder="Type message..." onkeypress="if(event.key==='Enter'){sendChat();}" />
+    <div>
+      <span class="reaction" onclick="sendReaction('💖')">💖</span>
+      <span class="reaction" onclick="sendReaction('🎉')">🎉</span>
+      <span class="reaction" onclick="sendReaction('👏')">👏</span>
+      <span class="reaction" onclick="sendReaction('💐')">💐</span>
+    </div>
+  </div>
+
+<script>
+// ==== Variables ====
+let peer, conn;
+let myId, hostId, currentRoom;
+let users = [];
+let isHost = false;
+let partners = { p1: null, p2: null };
+
+// ==== Lobby ====
+function createRoom() {
+  const name = document.getElementById("username").value.trim();
+  if (!name) return alert("Enter your name first!");
+  isHost = true;
+  peer = new Peer();
+  peer.on("open", id => {
+    myId = id;
+    hostId = id;
+    currentRoom = id.substring(0,5);
+    users.push({id: myId, name});
+    showScreen("waiting");
+    document.getElementById("roomCode").textContent = "Room ID: " + currentRoom;
+    renderUserList();
+  });
+  setupPeerEvents();
+}
+
+function joinRoom() {
+  const name = document.getElementById("username").value.trim();
+  if (!name) return alert("Enter your name first!");
+  document.getElementById("roomInput").style.display = "block";
+  const roomId = prompt("Enter Room ID:");
+  peer = new Peer();
+  peer.on("open", id => {
+    myId = id;
+    conn = peer.connect(roomId);
+    conn.on("open", () => {
+      conn.send({ type: "join", id: myId, name });
+    });
+  });
+  setupPeerEvents();
+}
+
+// ==== Peer Events ====
+function setupPeerEvents() {
+  peer.on("connection", connection => {
+    connection.on("data", data => handleMessage(data, connection));
+  });
+}
+
+// ==== Broadcast ====
+function broadcast(data) {
+  if (isHost) {
+    users.forEach(u => {
+      if (u.id !== myId && peer.connections[u.id]) {
+        peer.connections[u.id][0].send(data);
+      }
+    });
+  } else {
+    conn.send(data);
+  }
+}
+
+// ==== Handle Messages ====
+function handleMessage(data, connection) {
+  switch (data.type) {
+    case "join":
+      if (isHost) {
+        users.push({id: data.id, name: data.name});
+        renderUserList();
+        connection.send({type:"init", users, partners});
+      }
+      break;
+    case "init":
+      users = data.users;
+      partners = data.partners;
+      showScreen("waiting");
+      renderUserList();
+      break;
+    case "chat": addChat(data.user, data.msg); break;
+    case "reaction": addReaction(data.emoji); break;
+    case "scene": playScene(data.scene); break;
+    case "setPartners": handleSetPartners(data); break;
+  }
+}
+
+// ==== User List & Partners ====
+function renderUserList() {
+  const list = document.getElementById("userList");
+  list.innerHTML = "";
+  users.forEach(u => {
+    let role = "Guest";
+    if (partners.p1 === u.id) role = "Partner 1 💍";
+    if (partners.p2 === u.id) role = "Partner 2 💍";
+
+    const div = document.createElement("div");
+    div.textContent = `${u.name} (${role})`;
+
+    if (isHost && role === "Guest") {
+      const btn1 = document.createElement("button");
+      btn1.textContent = "Set Partner 1";
+      btn1.onclick = () => setPartner(u.id, "p1");
+      const btn2 = document.createElement("button");
+      btn2.textContent = "Set Partner 2";
+      btn2.onclick = () => setPartner(u.id, "p2");
+      div.append(" ", btn1, btn2);
+    }
+    list.appendChild(div);
+  });
+}
+function setPartner(userId, slot) {
+  if (!isHost) return;
+  partners[slot] = userId;
+  broadcast({ type: "setPartners", partners });
+  renderUserList();
+}
+function handleSetPartners(data) {
+  partners = data.partners;
+  renderUserList();
+}
+
+// ==== Ceremony Flow ====
+function startCeremony() {
+  broadcast({type:"scene", scene:"processional"});
+  playScene("processional");
+}
+function playScene(scene) {
+  const sceneEl = document.getElementById("ceremonyScene");
+  showScreen("ceremony");
+  if (scene === "processional") {
+    sceneEl.textContent = "🎶 The partners walk down the aisle...";
+    setTimeout(()=>{ broadcast({type:"scene", scene:"vows"}); playScene("vows"); },4000);
+  } else if (scene === "vows") {
+    const p1 = users.find(u=>u.id===partners.p1)?.name || "Partner 1";
+    const p2 = users.find(u=>u.id===partners.p2)?.name || "Partner 2";
+    sceneEl.textContent = `${p1} and ${p2}, exchange your vows 💞`;
+    setTimeout(()=>{ broadcast({type:"scene", scene:"kiss"}); playScene("kiss"); },6000);
+  } else if (scene === "kiss") {
+    showKissScene();
+  }
+}
+function showKissScene() {
+  const sceneEl = document.getElementById("ceremonyScene");
+  sceneEl.textContent = "💋 The Kiss! 💋";
+  // floating hearts
+  for(let i=0;i<15;i++){
+    const heart=document.createElement("div");
+    heart.textContent="💖";
+    heart.className="heart";
+    heart.style.left=Math.random()*100+"vw";
+    heart.style.animationDuration=(3+Math.random()*2)+"s";
+    document.getElementById("ceremony").appendChild(heart);
+    setTimeout(()=>heart.remove(),5000);
+  }
+  setTimeout(()=>{
+    sceneEl.textContent="🎉 Congratulations! 🎉";
+    generateCertificate();
+  },4000);
+}
+
+// ==== Chat & Reactions ====
+function sendChat() {
+  const msg=document.getElementById("chatInput").value;
+  if(!msg) return;
+  addChat("Me", msg);
+  broadcast({type:"chat", user:"Guest", msg});
+  document.getElementById("chatInput").value="";
+}
+function addChat(user,msg){
+  const box=document.getElementById("chatBox");
+  const div=document.createElement("div");
+  div.textContent=`${user}: ${msg}`;
+  box.appendChild(div);
+  box.scrollTop=box.scrollHeight;
+}
+function sendReaction(emoji){
+  addReaction(emoji);
+  broadcast({type:"reaction", emoji});
+}
+function addReaction(emoji){
+  const box=document.getElementById("chatBox");
+  const div=document.createElement("div");
+  div.textContent=emoji;
+  box.appendChild(div);
+}
+
+// ==== Certificate ====
+function generateCertificate() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 800; canvas.height = 600;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  ctx.strokeStyle="#d4af37"; ctx.lineWidth=8;
+  ctx.strokeRect(30,30,740,540);
+
+  ctx.fillStyle="#000"; ctx.textAlign="center";
+  ctx.font="36px serif";
+  ctx.fillText("Certificate of Virtual Marriage",400,100);
+
+  const p1 = users.find(u => u.id === partners.p1)?.name || "Partner 1";
+  const p2 = users.find(u => u.id === partners.p2)?.name || "Partner 2";
+  ctx.font="28px serif";
+  ctx.fillText(`${p1} 💍 ${p2}`,400,220);
+
+  const date=new Date().toLocaleDateString();
+  ctx.fillText(`On this day: ${date}`,400,300);
+  ctx.fillText(`Ceremony ID: ${currentRoom}`,400,380);
+
+  const btn=document.createElement("button");
+  btn.textContent="Download Certificate";
+  btn.onclick=()=>{
+    const link=document.createElement("a");
+    link.download="marriage_certificate.png";
+    link.href=canvas.toDataURL();
+    link.click();
+  };
+  document.getElementById("ceremony").appendChild(btn);
+  document.getElementById("ceremony").appendChild(canvas);
+}
+
+// ==== Utils ====
+function showScreen(id){
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+}
+</script>
+
+</body>
+</html>
