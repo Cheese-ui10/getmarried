@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Virtual Marriage — Live Sync Demo 💍</title>
+  <style>
+    :root{--bg1:#0f1220; --bg2:#152034; --accent:#ff7fd1; --accent2:#7df3ff; --gold:#ffd56a; --text:#f6f7fb; --muted:rgba(255,255,255,.75)}
+    html,body{height:100%; margin:0; font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial; background:linear-gradient(180deg,var(--bg1),var(--bg2)); color:var(--text)}
+    .container{max-width:1100px;margin:20px auto;padding:20px}
+    .card{background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); border-radius:14px; padding:16px; box-shadow:0 10px 30px rgba(0,0,0,.45)}
+    h1{margin:4px 0 8px 0}
+    .flex{display:flex;gap:12px;align-items:center}
+    .vstack{display:flex;flex-direction:column;gap:10px}
+    button{border:0;padding:10px 14px;border-radius:10px;cursor:pointer;font-weight:700}
+    .primary{background:linear-gradient(90deg,var(--accent),var(--accent2));color:#061018}
+    .ghost{background:transparent;border:1px solid rgba(255,255,255,.08)}
+    input,textarea{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);padding:10px;border-radius:10px;color:var(--text)}
+    .muted{color:var(--muted)}
+    .hidden{display:none}
+    /* Scenes */
+    #stage{height:320px; border-radius:12px; overflow:hidden; position:relative}
+    .stage-bg{position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.02),transparent);display:flex;align-items:end;justify-content:center;padding-bottom:30px}
+    .couple{display:flex;gap:22px;align-items:end}
+    .avatar{width:120px;height:160px;border-radius:12px;background:linear-gradient(180deg,#222,#111);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:22px;position:relative}
+    .walk{animation:walk-in 2.2s ease forwards}
+    @keyframes walk-in{from{transform:translateX(-160px) scale(.9);opacity:0} to{transform:translateX(0) scale(1);opacity:1}}
+    .walk-right{animation:walk-right 2.2s ease forwards}
+    @keyframes walk-right{from{transform:translateX(160px) scale(.9);opacity:0} to{transform:translateX(0) scale(1);opacity:1}}
+    .arch{width:420px;height:220px;border-radius:220px 220px 24px 24px;background:radial-gradient(circle at 50% 20%, rgba(255,255,255,.03), transparent);border:4px solid rgba(255,255,255,.04);display:flex;align-items:flex-start;justify-content:center;padding-top:26px}
+    .confetti-small{position:absolute;inset:0;pointer-events:none}
+    /* Kiss animation */
+    .kiss-layer{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+    .kiss-heart{width:40px;height:40px;transform:scale(0);opacity:0;border-radius:50%;background:radial-gradient(circle at 30% 30%, #fff, #ff7fd1 50%, #ffd56a 100%);animation:pop 1s ease forwards}
+    @keyframes pop{0%{transform:scale(0);opacity:0}30%{transform:scale(1.4);opacity:1}100%{transform:scale(0.9);opacity:0}}
+    /* Chat */
+    #chat{height:240px; overflow:auto; padding:10px; background:rgba(0,0,0,.15); border-radius:10px}
+    .msg{padding:8px 10px;margin-bottom:8px;border-radius:10px;background:rgba(255,255,255,.03)}
+    .me{background:linear-gradient(90deg,#7df3ff33,#b7fff133)}
+    .presence{font-size:12px;color:var(--muted)}
+    /* responsive */
+    @media(max-width:700px){.couple{flex-direction:column}.avatar{width:96px;height:120px}}
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="card vstack">
+    <div class="flex" style="justify-content:space-between">
+      <div>
+        <h1>Virtual Marriage — Live Sync & Scenes</h1>
+        <div class="muted">Processional • Vows • Kiss animation • Guest chat • Live multi-device sync (Firebase optional)</div>
+      </div>
+      <div class="vstack" style="align-items:flex-end">
+        <div class="presence" id="sync-status">Sync: <strong id="syncLabel">Disabled</strong></div>
+        <div class="presence" id="online-count">Guests online: <span id="guestCount">0</span></div>
+      </div>
+    </div>
+
+    <!-- Setup -->
+    <div class="flex" style="gap:8px;margin-top:12px">
+      <input id="name1" placeholder="Partner A (e.g., Alex)" />
+      <input id="name2" placeholder="Partner B (e.g., Sam)" />
+      <button class="primary" id="btn-init">Initiate Simulation</button>
+      <button class="ghost" id="btn-config">Enable Live Sync</button>
+    </div>
+
+    <!-- Stage -->
+    <div id="stage" class="card" style="margin-top:12px">
+      <div class="stage-bg" id="scene-root">
+        <!-- default content injected by JS -->
+      </div>
+      <canvas class="confetti-small" id="c-small"></canvas>
+      <div class="kiss-layer" id="kissLayer"></div>
+    </div>
+
+    <!-- Controls -->
+    <div class="flex" style="margin-top:12px;align-items:center">
+      <button class="ghost" id="btn-backToLanding">Back</button>
+      <button class="primary" id="btn-processional">Play Processional</button>
+      <button class="primary" id="btn-vows">Read Vows & I Do</button>
+      <button class="primary" id="btn-kiss">Kiss Animation</button>
+      <div style="margin-left:auto" class="muted">Invite link: <button class="ghost" id="btn-copyInvite">Copy</button></div>
+    </div>
+
+    <!-- Chat + Vows -->
+    <div style="display:grid;grid-template-columns:1fr 340px;gap:12px;margin-top:12px">
+      <div class="card vstack">
+        <h3>Vows & Ceremony Log</h3>
+        <div id="log" style="height:220px;overflow:auto;padding:8px;background:rgba(0,0,0,.12);border-radius:8px"></div>
+      </div>
+
+      <div class="card vstack">
+        <h3>Guest Chat</h3>
+        <div id="chat" aria-live="polite"></div>
+        <div class="flex" style="margin-top:8px">
+          <input id="chatInput" placeholder="Say congrats…" />
+          <button class="primary" id="sendChat">Send</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Firebase SDK (optional) - you must paste your config into firebaseConfig variable below to enable live sync. -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<script>
+  // Simple single-file app implementing:
+  // - processional (walk-in) scene
+  // - vows & I Do logic
+  // - kiss animation
+  // - guest chat
+  // - optional live multi-device syncing via Firebase Realtime Database (client-only)
+
+  // --------- Helpers & DOM ---------
+  const $ = s => document.querySelector(s);
+  const logEl = $('#log'); const chatEl = $('#chat'); const guestCountEl = $('#guestCount'); const syncLabel = $('#syncLabel');
+
+  function appendLog(txt){ const d = document.createElement('div'); d.textContent = txt; logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight; }
+  function appendChat(name, txt, self=false){ const m = document.createElement('div'); m.className='msg '+(self?'me':''); m.innerHTML = `<strong>${escapeHtml(name)}:</strong> ${escapeHtml(txt)}`; chatEl.appendChild(m); chatEl.scrollTop = chatEl.scrollHeight; }
+  function escapeHtml(s){ return (s+'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+
+  // Invite link
+  $('#btn-copyInvite').addEventListener('click', ()=>{
+    const a = encodeURIComponent($('#name1').value||''); const b = encodeURIComponent($('#name2').value||'');
+    const url = `${location.origin}${location.pathname}?a=${a}&b=${b}`; navigator.clipboard.writeText(url).then(()=>alert('Invite copied!')).catch(()=>prompt('Copy link', url));
+  });
+
+  // Prefill from url
+  const params = new URLSearchParams(location.search);
+  if(params.get('a')) $('#name1').value = params.get('a');
+  if(params.get('b')) $('#name2').value = params.get('b');
+
+  // --------- Stage rendering ---------
+  const sceneRoot = $('#scene-root');
+  function renderLanding(){ sceneRoot.innerHTML = `<div class="arch"><div style="text-align:center"><div style="font-size:20px;font-weight:800">Welcome</div><div class="muted">Ready the vows and invite guests</div></div></div>`; }
+  function renderCouple(a,b){ sceneRoot.innerHTML = `<div class="arch"><div class="couple"><div class="avatar" id="avaA">${a?a[0].toUpperCase():'A'}</div><div style="width:24px"></div><div class="avatar" id="avaB">${b?b[0].toUpperCase():'B'}</div></div></div>`; }
+  renderLanding();
+
+  // --------- Processional (walk-in) ---------
+  async function playProcessional(){
+    const a = $('#name1').value.trim()||'A'; const b = $('#name2').value.trim()||'B';
+    renderCouple(a,b);
+    const avaA = $('#avaA'), avaB = $('#avaB');
+    // place off-screen then animate
+    avaA.style.transform='translateX(-160px)'; avaB.style.transform='translateX(160px)'; avaA.style.opacity=0; avaB.style.opacity=0;
+    avaA.classList.add('walk'); avaB.classList.add('walk-right');
+    appendLog('Processional: ' + a + ' and ' + b + ' approach the arch.');
+    broadcast({type:'processional', a,b, t:Date.now()});
+  }
+  $('#btn-processional').addEventListener('click', playProcessional);
+
+  // --------- Vows & I Do (local + broadcast) ---------
+  let confirmed = {a:false,b:false};
+  async function readVowsAndConfirm(){
+    const a = $('#name1').value.trim()||'Partner A'; const b = $('#name2').value.trim()||'Partner B';
+    appendLog(`Officiant: Do you, ${a}, take ${b} as your symbolic partner?`);
+    appendLog(`${a}: I do.`); confirmed.a = true; broadcast({type:'vow',who:'a',name:a});
+    await wait(800);
+    appendLog(`Officiant: Do you, ${b}, take ${a} as your symbolic partner?`);
+    appendLog(`${b}: I do.`); confirmed.b = true; broadcast({type:'vow',who:'b',name:b});
+    await wait(600);
+    if(confirmed.a && confirmed.b){ appendLog('Officiant: By the power vested in pixels, I pronounce you symbolically united! 💖'); broadcast({type:'sealed',a,b}); }
+  }
+  $('#btn-vows').addEventListener('click', readVowsAndConfirm);
+
+  // --------- Kiss animation ---------
+  function doKiss(){
+    // small heart burst in center
+    const layer = $('#kissLayer'); layer.innerHTML='';
+    for(let i=0;i<12;i++){ const h = document.createElement('div'); h.className='kiss-heart'; h.style.left = (50 + (Math.random()*40-20)) + '%'; h.style.top = (50 + (Math.random()*20-10)) + '%'; h.style.animationDelay = (i*60)+'ms'; layer.appendChild(h); }
+    appendLog('The couple sealed their union with a kiss 💋'); broadcast({type:'kiss'});
+  }
+  $('#btn-kiss').addEventListener('click', doKiss);
+
+  // --------- Chat ---------
+  $('#sendChat').addEventListener('click', ()=> sendChat());
+  $('#chatInput').addEventListener('keydown', (e)=>{ if(e.key==='Enter') sendChat(); });
+  function sendChat(){ const txt = $('#chatInput').value.trim(); if(!txt) return; const name = $('#name1').value.trim()||'Guest'; appendChat(name, txt, true); $('#chatInput').value=''; broadcast({type:'chat', name, txt}); }
+
+  // --------- Small confetti for stage ---------
+  const canvasSmall = document.getElementById('c-small'); const ctxSmall = canvasSmall.getContext('2d'); function resizeSmall(){ canvasSmall.width = canvasSmall.clientWidth; canvasSmall.height = canvasSmall.clientHeight; }
+  window.addEventListener('resize', resizeSmall); resizeSmall();
+  function burstSmall(){ const pieces=80; const w=canvasSmall.width,h=canvasSmall.height; const arr=[]; for(let i=0;i<pieces;i++){ arr.push({x:w/2+Math.random()*200-100,y:h/2+Math.random()*40-20,vx:(Math.random()-0.5)*6,vy:(Math.random()*-6)-2,r:2+Math.random()*4,color:randomColor()}); }
+    let t=0; const iv = setInterval(()=>{ ctxSmall.clearRect(0,0,w,h); t++; arr.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=0.2; ctxSmall.fillStyle=p.color; ctxSmall.fillRect(p.x,p.y,p.r,p.r); }); if(t>60){ clearInterval(iv); ctxSmall.clearRect(0,0,w,h); } },16);
+  }
+  function randomColor(){ const cs=['#ff7fd1','#7df3ff','#ffd56a','#9cf8c1','#b79cff','#ff9aa9']; return cs[(Math.random()*cs.length)|0]; }
+
+  // --------- Utilities ---------
+  function wait(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+  // --------- Live Sync (Firebase) ---------
+  // To enable: click 'Enable Live Sync' and paste your Firebase Realtime Database config when prompted.
+  let db=null; let roomId = 'room-default'; let clientId = 'c_'+Math.random().toString(36).slice(2,9);
+  $('#btn-config').addEventListener('click', async ()=>{
+    const paste = prompt('Paste Firebase config JSON (apiKey, authDomain, databaseURL, projectId, storageBucket, messagingSenderId, appId)');
+    if(!paste) return alert('No config provided. Live sync stays disabled.');
+    let cfg=null; try{ cfg = JSON.parse(paste); }catch(e){ return alert('Invalid JSON'); }
+    try{
+      firebase.initializeApp(cfg);
+      db = firebase.database();
+      syncLabel.textContent = 'Enabled'; $('#sync-status').classList.remove('muted');
+      setupSync();
+    }catch(err){ alert('Firebase init error: '+err.message); }
+  });
+
+  function setupSync(){
+    // presence
+    const presenceRef = db.ref(`rooms/${roomId}/presence/${clientId}`);
+    presenceRef.set({id:clientId, name: $('#name1').value||'Guest', ts:Date.now()});
+    presenceRef.onDisconnect().remove();
+    // watch presence
+    db.ref(`rooms/${roomId}/presence`).on('value', snap=>{
+      const v = snap.val()||{}; const count = Object.keys(v).length; guestCountEl.textContent = count; appendLog('Presence updated: '+count+' online');
+    });
+    // chat listener
+    db.ref(`rooms/${roomId}/chat`).limitToLast(200).on('child_added', s=>{
+      const m = s.val(); if(m.client===clientId) return; appendChat(m.name, m.txt, false);
+    });
+    // ceremony events
+    db.ref(`rooms/${roomId}/events`).limitToLast(50).on('child_added', s=>{
+      const ev = s.val(); if(ev.client===clientId) return; handleRemoteEvent(ev);
+    });
+    syncLabel.textContent = 'Enabled (Firebase)';
+  }
+
+  function broadcast(obj){
+    appendLog('[local] '+(obj.type||'event'));
+    if(!db) return; const payload = Object.assign({}, obj, {client:clientId, ts:Date.now()}); db.ref(`rooms/${roomId}/events`).push(payload);
+  }
+
+  function handleRemoteEvent(ev){
+    if(!ev) return; switch(ev.type){
+      case 'chat': appendChat(ev.name, ev.txt); break;
+      case 'processional': renderCouple(ev.a, ev.b); burstSmall(); appendLog(`(remote) Processional: ${ev.a} & ${ev.b}`); break;
+      case 'vow': appendLog(`(remote) ${ev.name} said I do.`); break;
+      case 'sealed': appendLog(`(remote) The couple was sealed: ${ev.a} & ${ev.b}`); burstSmall(); break;
+      case 'kiss': doRemoteKiss(); break;
+    }
+  }
+  function doRemoteKiss(){ // slightly different visual
+    const layer = $('#kissLayer'); layer.innerHTML=''; const h=document.createElement('div'); h.className='kiss-heart'; layer.appendChild(h); setTimeout(()=>layer.innerHTML='',1200); }
+
+  // chat broadcast with firebase
+  function broadcastChat(name, txt){ if(!db) return; db.ref(`rooms/${roomId}/chat`).push({name,txt,client:clientId,ts:Date.now()}); }
+
+  // Hook broadcast for chat send
+  // Override sendChat's broadcast to use firebase if available
+  const originalBroadcast = broadcast;
+  broadcast = function(obj){ originalBroadcast(obj); if(obj.type==='chat'){ if(db) db.ref(`rooms/${roomId}/chat`).push({name:obj.name,txt:obj.txt,client:clientId,ts:Date.now()}); } }
+
+  // send chat should also call broadcast
+  function sendChatRemote(){ const txt = $('#chatInput').value.trim(); if(!txt) return; const name = $('#name1').value.trim()||'Guest'; appendChat(name, txt, true); $('#chatInput').value=''; if(db) db.ref(`rooms/${roomId}/chat`).push({name,txt,client:clientId,ts:Date.now()}); else broadcast({type:'chat',name,txt}); }
+  // wire event
+  $('#sendChat').removeEventListener('click', ()=>{}); $('#sendChat').addEventListener('click', sendChatRemote);
+  $('#chatInput').removeEventListener('keydown', ()=>{}); $('#chatInput').addEventListener('keydown', (e)=>{ if(e.key==='Enter') sendChatRemote(); });
+
+  // copy of broadcast used earlier (ensures always push to firebase when available)
+  function broadcast(obj){ appendLog('[local] '+(obj.type||'event')); if(!db) return; const payload = Object.assign({}, obj, {client:clientId, ts:Date.now()}); db.ref(`rooms/${roomId}/events`).push(payload); }
+
+  // When remote sealed event arrives, auto-generate certificate locally and offer download (simple)
+  dbSafe(()=>{
+    if(!window.firebase) return; // firebase not loaded
+  });
+
+  function dbSafe(fn){ try{ fn(); }catch(e){ console.log('db safe fail',e); } }
+
+  // --------- Utils: allow initiating simulation and auto-playing music/confetti ---------
+  $('#btn-init').addEventListener('click', ()=>{
+    appendLog('Simulation initiated by local user'); renderCouple($('#name1').value||'A', $('#name2').value||'B'); burstSmall(); });
+
+  // Auto invite from URL
+  if(params.get('a')||params.get('b')){ appendLog('Invite loaded from URL'); }
+
+  // Small safety: ensure no errors if firebase not used
+  window.addEventListener('error', e=>{ console.error(e); appendLog('Error: '+e.message); });
+
+  // initial log
+  appendLog('App ready — optional: enable Live Sync to allow guests to chat & see remote events.');
+
+</script>
+</body>
+</html>
