@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Virtual Wedding — Lobby & Ceremony</title>
+
+<!-- Minimal elegant styling -->
+<style>
+  :root{
+    --accent:#b85b7a;
+    --accent-2:#f0c9d9;
+    --bg1: linear-gradient(135deg,#fff7f9,#fffdf8);
+    --card:#ffffff;
+    --muted:#666;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;font-family: "Georgia", serif;
+    background:var(--bg1); color:#333;
+    min-height:100vh; display:flex; flex-direction:column; align-items:center;
+  }
+  header{width:100%; padding:22px 20px; text-align:center; border-bottom:1px solid rgba(0,0,0,0.04)}
+  h1{margin:0; color:var(--accent); font-size:28px}
+  .container{max-width:1100px; width:100%; padding:20px; display:grid; grid-template-columns: 1fr 380px; gap:24px;}
+  .card{background:var(--card); border-radius:14px; padding:18px; box-shadow:0 6px 28px rgba(0,0,0,0.06); border:1px solid rgba(184,91,122,0.06)}
+  .center{display:flex; gap:8px; align-items:center; justify-content:center; flex-wrap:wrap}
+  input,button,select,textarea{font-family:inherit}
+  input,select,textarea{padding:10px;border-radius:10px;border:1px solid rgba(0,0,0,0.08);width:100%}
+  button{padding:10px 14px;border-radius:10px;background:var(--accent);color:white;border:none;cursor:pointer}
+  button.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+  .small{font-size:0.9rem}
+  .muted{color:var(--muted)}
+  /* participants */
+  #participants{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+  .participant{background:linear-gradient(180deg,#fff,#fffafc);padding:8px 12px;border-radius:999px;border:1px solid rgba(0,0,0,0.04);box-shadow:0 2px 6px rgba(0,0,0,0.04)}
+  /* chat */
+  .chat{display:flex;flex-direction:column;height:420px}
+  .chat .messages{flex:1;overflow:auto;padding:12px;background:linear-gradient(180deg,#fffdfd,#fffdf8);border-radius:10px;border:1px solid rgba(0,0,0,0.04)}
+  .bubble{display:inline-block;margin:8px 0;padding:8px 12px;border-radius:12px;background:#fff;color:#111;box-shadow:0 2px 6px rgba(0,0,0,0.03);max-width:78%;}
+  .bubble.me{background:linear-gradient(180deg,#fde6ee,#f9d5e1);align-self:flex-end}
+  .meta{font-size:0.75rem;color:var(--muted);margin-bottom:6px}
+  .chat-input{display:flex;gap:8px;margin-top:8px}
+  .chat-input input{flex:1}
+  /* ceremony */
+  .ceremony-steps{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .step{padding:8px 10px;border-radius:10px;background:linear-gradient(180deg,#fff,#fffafc);border:1px solid rgba(0,0,0,0.04)}
+  .step.active{outline:3px solid rgba(184,91,122,0.12)}
+  /* witness list */
+  #witnessList{margin-top:8px;list-style:none;padding:0}
+  #witnessList li{padding:6px;border-radius:6px;background:#fff;margin-bottom:6px;border:1px solid rgba(0,0,0,0.03)}
+  /* mobile */
+  @media (max-width:980px){
+    .container{grid-template-columns:1fr; padding:12px}
+    .chat{height:300px}
+  }
+  /* confetti canvas */
+  #confetti { position:fixed; inset:0; pointer-events:none; z-index:9999 }
+</style>
+</head>
+<body>
+<header>
+  <h1>💍 Virtual Wedding</h1>
+  <div class="muted small">Elegant, synchronous ceremony — guests join, chat, sign as witnesses, and download a certificate.</div>
+</header>
+
+<main class="container">
+  <!-- Left column: lobby / ceremony -->
+  <section class="card" id="mainCard">
+    <!-- Join area -->
+    <div id="joinArea">
+      <h2 style="margin:0 0 8px 0">Enter Lobby</h2>
+      <div style="display:grid;gap:10px;max-width:520px">
+        <input id="inputName" placeholder="Your full name (e.g. Jane Doe)" />
+        <input id="inputRoom" placeholder="Room code (e.g. JOY-123)" />
+        <div style="display:flex;gap:8px">
+          <button id="btnJoin">Join Room</button>
+          <button id="btnCreate" class="ghost">Create Random Room</button>
+        </div>
+        <div class="muted small">Tip: If you already exposed sync functions in your repo, this page will use them automatically. Otherwise it uses a browser fallback (BroadcastChannel).</div>
+      </div>
+    </div>
+
+    <!-- Lobby -->
+    <div id="lobbyArea" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <h2 style="margin:0">Lobby — <span id="roomLabel">--</span></h2>
+          <div class="muted small">Share the room code to invite guests</div>
+        </div>
+        <div>
+          <button id="btnStart" class="ghost small">Start Ceremony</button>
+        </div>
+      </div>
+
+      <div style="margin-top:12px">
+        <h3 style="margin:6px 0">Guests</h3>
+        <div id="participants" aria-live="polite"></div>
+      </div>
+    </div>
+
+    <!-- Ceremony -->
+    <div id="ceremonyArea" style="display:none; margin-top:14px">
+      <div style="display:flex;gap:12px;align-items:center;justify-content:space-between">
+        <div>
+          <h2 id="currentStepTitle" style="margin:0">Welcome</h2>
+          <div class="muted small" id="stepSubtitle">Ceremony hasn't started</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button id="btnPrev" class="ghost small">◀ Prev</button>
+          <button id="btnNext" class="small">Next ▶</button>
+        </div>
+      </div>
+
+      <div class="ceremony-steps" id="stepsRow" style="margin-top:12px"></div>
+
+      <!-- Witness quick-sign -->
+      <div style="margin-top:14px">
+        <h3 style="margin:0 0 6px 0">Witnesses</h3>
+        <div style="display:flex;gap:8px;max-width:520px">
+          <input id="witnessInput" placeholder="Sign as witness (your name)" />
+          <button id="btnWitness" class="small">Sign</button>
+        </div>
+        <ul id="witnessList"></ul>
+      </div>
+
+      <!-- Certificate area -->
+      <div style="margin-top:12px;display:flex;gap:12px;align-items:center">
+        <div style="flex:1">
+          <label class="small muted">Couple names</label>
+          <input id="coupleNames" value="Alice & Bob" />
+        </div>
+        <div style="width:180px">
+          <label class="small muted">Ceremony Date</label>
+          <input id="ceremonyDate" type="date" />
+        </div>
+        <div style="align-self:flex-end">
+          <button id="btnGenerate" class="small">Generate Certificate</button>
+        </div>
+      </div>
+
+      <div style="margin-top:10px">
+        <button id="btnFinish" class="small" style="background:linear-gradient(180deg,#b85b7a,#923f59);">Finish Ceremony & Celebrate</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Right column: chat + details -->
+  <aside class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <h3 style="margin:0">Live Chat</h3>
+        <div class="muted small">Guests can send messages during the ceremony</div>
+      </div>
+      <div><button id="btnToggleChat" class="ghost small">Clear</button></div>
+    </div>
+
+    <div class="chat" style="margin-top:10px">
+      <div id="chatMessages" class="messages" aria-live="polite"></div>
+      <div class="chat-input">
+        <input id="chatInput" placeholder="Write a message..." />
+        <button id="chatSend">Send</button>
+      </div>
+    </div>
+
+    <div style="margin-top:12px">
+      <h4 style="margin:6px 0">Room Info</h4>
+      <div class="small muted">Room: <strong id="roomInfo">—</strong></div>
+      <div class="small muted">You: <strong id="youInfo">—</strong></div>
+    </div>
+  </aside>
+</main>
+
+<canvas id="confetti"></canvas>
+
+<!-- jsPDF (for certificate) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script>
+/* ============================
+   Sync adapter
+   - Uses repo-provided window.syncSend / window.syncOn if available
+   - Otherwise falls back to BroadcastChannel (same-origin tabs)
+   - Otherwise uses localStorage events as last resort
+   ============================ */
+(function(){
+  window._sync = {
+    mode: null,
+    channel: null, // BroadcastChannel instance
+    listeners: {},
+
+    initRoom(roomId){
+      this.roomId = roomId;
+      if(window.syncSend && window.syncOn){
+        this.mode = 'external';
+        console.info("Sync: using external sync methods (window.syncSend/window.syncOn)");
+        // wire up incoming events to our listeners
+        // assume external will call syncOn for named events; but add a default passthrough
+      } else if ('BroadcastChannel' in window) {
+        this.mode = 'broadcast';
+        this.channel = new BroadcastChannel('wedding-'+roomId);
+        this.channel.onmessage = (ev) => {
+          const {type,payload,from} = ev.data || {};
+          this._emit(type, payload, from);
+        };
+        console.info("Sync: using BroadcastChannel fallback");
+      } else {
+        this.mode = 'localStorage';
+        window.addEventListener('storage', (ev) => {
+          if(ev.key && ev.key.startsWith('wedding-'+roomId+'-evt-')){
+            try{
+              const {type,payload,from} = JSON.parse(ev.newValue||'{}');
+              this._emit(type,payload,from);
+            }catch(e){}
+          }
+        });
+        console.info("Sync: using localStorage fallback");
+      }
+    },
+
+    send(type,payload){
+      // include sender id for potential ignore
+      const envelope = { type, payload, from: window._weddingClientId || generateId(), ts:Date.now() };
+      if(this.mode === 'external' && window.syncSend){
+        try{ window.syncSend(type, payload); }catch(e){ console.warn("external syncSend failed",e) }
+      } else if (this.mode === 'broadcast' && this.channel){
+        this.channel.postMessage(envelope);
+      } else {
+        // localStorage fallback - use a unique key so storage event fires
+        try{
+          const key = 'wedding-'+this.roomId+'-evt-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
+          localStorage.setItem(key, JSON.stringify(envelope));
+          // cleanup older keys a little later
+          setTimeout(()=>{ try{ localStorage.removeItem(key); }catch(e){} }, 1500);
+        }catch(e){ console.warn(e) }
+      }
+    },
+
+    on(type, cb){
+      if(!this.listeners[type]) this.listeners[type]=[];
+      this.listeners[type].push(cb);
+      // If external sync exists, ask it to call our callbacks when events occur.
+      if(this.mode === 'external' && window.syncOn){
+        try{ window.syncOn(type, (payload)=> cb({payload, from: 'external'})); }catch(e){}
+      }
+    },
+
+    _emit(type,payload,from){
+      const arr=this.listeners[type]||[];
+      arr.forEach(fn=>{
+        try{ fn({payload, from}); }catch(e){}
+      });
+    }
+  };
+
+  // small UID for this client
+  function generateId(len=8){ return 'c-'+Math.random().toString(36).slice(2,2+len) }
+  window._weddingClientId = generateId();
+})();
+
+/* =========================
+   App logic
+   ========================= */
+(() => {
+  // UI refs
+  const nameInput = document.getElementById('inputName');
+  const roomInput = document.getElementById('inputRoom');
+  const btnJoin = document.getElementById('btnJoin');
+  const btnCreate = document.getElementById('btnCreate');
+  const joinArea = document.getElementById('joinArea');
+  const lobbyArea = document.getElementById('lobbyArea');
+  const ceremonyArea = document.getElementById('ceremonyArea');
+  const participantsDiv = document.getElementById('participants');
+  const roomLabel = document.getElementById('roomLabel');
+  const roomInfo = document.getElementById('roomInfo');
+  const youInfo = document.getElementById('youInfo');
+  const btnStart = document.getElementById('btnStart');
+  const chatMessages = document.getElementById('chatMessages');
+  const chatInput = document.getElementById('chatInput');
+  const chatSend = document.getElementById('chatSend');
+  const btnToggleChat = document.getElementById('btnToggleChat');
+  const stepsRow = document.getElementById('stepsRow');
+  const currentStepTitle = document.getElementById('currentStepTitle');
+  const stepSubtitle = document.getElementById('stepSubtitle');
+  const btnNext = document.getElementById('btnNext');
+  const btnPrev = document.getElementById('btnPrev');
+  const btnWitness = document.getElementById('btnWitness');
+  const witnessInput = document.getElementById('witnessInput');
+  const witnessList = document.getElementById('witnessList');
+  const btnGenerate = document.getElementById('btnGenerate');
+  const coupleNamesInput = document.getElementById('coupleNames');
+  const ceremonyDateInput = document.getElementById('ceremonyDate');
+  const btnFinish = document.getElementById('btnFinish');
+
+  // app state
+  let roomId=null, myName=null, isHost=false;
+  const steps = ['Welcome','Opening Words','Vows','Ring Exchange','Pronouncement','Kiss','Recessional'];
+
+  // init UI steps
+  function renderSteps(activeIndex=0){
+    stepsRow.innerHTML='';
+    steps.forEach((s,i)=>{
+      const el=document.createElement('div');
+      el.className='step' + (i===activeIndex ? ' active' : '');
+      el.textContent = (i===activeIndex ? '➡︎ ' : '') + s;
+      stepsRow.appendChild(el);
+    });
+  }
+  renderSteps(0);
+
+  // helper: append chat message
+  function addChatMessage({name,text,time,me}){
+    const wrap=document.createElement('div');
+    wrap.style.display='flex';
+    wrap.style.flexDirection='column';
+    wrap.style.alignItems = me ? 'flex-end' : 'flex-start';
+    const meta = document.createElement('div');
+    meta.className='meta';
+    meta.textContent = `${name} • ${time}`;
+    const b = document.createElement('div');
+    b.className = 'bubble' + (me ? ' me' : '');
+    b.innerText = text;
+    wrap.appendChild(meta);
+    wrap.appendChild(b);
+    chatMessages.appendChild(wrap);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  // participants storage (local representation)
+  const participants = {}; // id -> name
+
+  function renderParticipants(){
+    participantsDiv.innerHTML='';
+    Object.values(participants).forEach(n=>{
+      const el=document.createElement('div');
+      el.className='participant';
+      el.textContent = n;
+      participantsDiv.appendChild(el);
+    });
+  }
+
+  // witnesses
+  const witnesses = [];
+
+  function renderWitnesses(){
+    witnessList.innerHTML='';
+    witnesses.forEach(w => {
+      const li = document.createElement('li');
+      li.textContent = w;
+      witnessList.appendChild(li);
+    });
+  }
+
+  // hook up sync after joining
+  function setupSync(roomCode){
+    window._sync.initRoom(roomCode);
+
+    // participants
+    window._sync.on('participant-join', ({payload, from}) => {
+      participants[payload.id] = payload.name;
+      renderParticipants();
+    });
+    window._sync.on('participant-leave', ({payload})=>{
+      delete participants[payload.id];
+      renderParticipants();
+    });
+
+    // chat
+    window._sync.on('chat-msg', ({payload, from}) => {
+      // ignore messages originating from this client if you want? we still render
+      addChatMessage({name: payload.name, text: payload.text, time: payload.time, me: payload.clientId === window._weddingClientId});
+    });
+
+    // ceremony state
+    window._sync.on('ceremony-state', ({payload})=>{
+      // payload: {stepIndex: number, started:bool, finished:bool, hostId}
+      if(payload.started){
+        joinArea.style.display='none';
+        lobbyArea.style.display='none';
+        ceremonyArea.style.display='block';
+      }
+      if(payload.stepIndex !== undefined){
+        renderSteps(payload.stepIndex);
+        currentStepTitle.innerText = steps[payload.stepIndex] || '—';
+        stepSubtitle.innerText = `Step ${payload.stepIndex+1} of ${steps.length}`;
+        // toggle prev/next based on host
+        btnNext.style.display = (payload.hostId === window._weddingClientId || isHost) ? 'inline-block' : 'none';
+        btnPrev.style.display = (payload.hostId === window._weddingClientId || isHost) ? 'inline-block' : 'none';
+      }
+      if(payload.finished){
+        celebrate();
+      }
+    });
+
+    // witness
+    window._sync.on('witness-added', ({payload})=>{
+      witnesses.push(payload.name);
+      renderWitnesses();
+    });
+
+    // certificate generation broadcast (optional)
+    window._sync.on('certificate-generated', ({payload})=>{
+      // payload.url or data - ignore here; clients may choose to download generated bytes
+      console.info('certificate generated', payload);
+    });
+  }
+
+  /* =========================
+     UI events
+     ========================= */
+
+  btnCreate.addEventListener('click', ()=>{
+    const code = 'WED-'+Math.random().toString(36).slice(2,7).toUpperCase();
+    roomInput.value = code;
+  });
+
+  btnJoin.addEventListener('click', ()=>{
+    myName = (nameInput.value || ('Guest '+Math.floor(Math.random()*9000))).trim();
+    const code = (roomInput.value || 'DEFAULT-ROOM').trim();
+    joinRoom(code, myName);
+  });
+
+  function joinRoom(code,name){
+    roomId = code;
+    myName = name;
+    // UI updates
+    roomLabel.textContent = roomId;
+    roomInfo.textContent = roomId;
+    youInfo.textContent = myName;
+    joinArea.style.display = 'none';
+    lobbyArea.style.display = 'block';
+
+    // register locally
+    participants[window._weddingClientId] = myName;
+    renderParticipants();
+
+    // setup sync and announce join
+    setupSync(roomId);
+    window._sync.send('participant-join', { id: window._weddingClientId, name: myName });
+
+    // listen for unload to broadcast leave
+    window.addEventListener('beforeunload', () => {
+      window._sync.send('participant-leave', { id: window._weddingClientId });
+    });
+  }
+
+  // start ceremony (host)
+  btnStart.addEventListener('click', ()=> {
+    isHost = true;
+    // set initial state
+    window._sync.send('ceremony-state', { started: true, stepIndex: 0, hostId: window._weddingClientId });
+    // also show ceremony UI locally
+    joinArea.style.display = 'none';
+    lobbyArea.style.display = 'none';
+    ceremonyArea.style.display = 'block';
+  });
+
+  // next / prev
+  btnNext.addEventListener('click', ()=> {
+    // ask current step from remote? we'll optimistic-increment by broadcasting stepIndex+1
+    // Keep simple: broadcast an increment instruction which listeners will apply
+    window._sync.send('ceremony-next', {});
+  });
+
+  btnPrev.addEventListener('click', ()=> {
+    window._sync.send('ceremony-prev', {});
+  });
+
+  // handle increment/decrement events centrally (everyone applies)
+// We'll maintain a simple local variable to track step index
+  let localStep = 0;
+  // when ceremony-state arrives, we set localStep
+  window._sync.on('ceremony-state', ({payload})=>{
+    if(payload.stepIndex !== undefined) localStep = payload.stepIndex;
+  });
+
+  // handle external Next/Prev commands
+  window._sync.on('ceremony-next', () => {
+    localStep = Math.min(localStep + 1, steps.length - 1);
+    window._sync.send('ceremony-state', { stepIndex: localStep, started:true, hostId: window._weddingClientId });
+  });
+  window._sync.on('ceremony-prev', () => {
+    localStep = Math.max(localStep - 1, 0);
+    window._sync.send('ceremony-state', { stepIndex: localStep, started:true, hostId: window._weddingClientId });
+  });
+
+  // chat
+  chatSend.addEventListener('click', sendChat);
+  chatInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') sendChat(); });
+  function sendChat(){
+    const txt = chatInput.value.trim(); if(!txt) return;
+    const msg = { name: myName || 'Guest', text: txt, time: new Date().toLocaleTimeString(), clientId: window._weddingClientId };
+    window._sync.send('chat-msg', msg);
+    chatInput.value = '';
+    // show local immediately
+    addChatMessage({name: msg.name, text: msg.text, time: msg.time, me:true});
+  }
+  btnToggleChat.addEventListener('click', ()=> {
+    chatMessages.innerHTML=''; // clear
+  });
+
+  // witness sign
+  btnWitness.addEventListener('click', ()=>{
+    const nm = (witnessInput.value || myName || ('Guest')).trim();
+    if(!nm) return;
+    window._sync.send('witness-added', { name: nm });
+    witnessInput.value = '';
+    // local add (some syncs will also broadcast back, duplicates might occur - not perfect but OK)
+    witnesses.push(nm); renderWitnesses();
+  });
+
+  // render witnesses from incoming events (already hooked in sync setup)
+
+  // generate certificate locally (and optionally broadcast that a certificate was generated)
+  btnGenerate.addEventListener('click', async ()=>{
+    const couple = coupleNamesInput.value || '— & —';
+    const date = ceremonyDateInput.value || new Date().toLocaleDateString();
+    const ws = witnesses.slice(); // snapshot
+    await generateCertificate(couple, date, ws);
+    // optionally inform others that cert was generated
+    window._sync.send('certificate-generated', { couple, date, witnesses: ws });
+  });
+
+  btnFinish.addEventListener('click', ()=>{
+    // mark finished and celebrate for all
+    window._sync.send('ceremony-state', { finished: true });
+    // also call our celebrate locally
+    celebrate();
+  });
+
+  // apply remote participant leave to local state
+  window._sync.on('participant-leave', ({payload})=>{
+    if(payload && payload.id) { delete participants[payload.id]; renderParticipants(); }
+  });
+
+  // handle incoming chat messages (we already push our own locally so add only if not from us)
+  window._sync.on('chat-msg', ({payload})=>{
+    if(payload.clientId === window._weddingClientId) return; // we already rendered
+    addChatMessage({name: payload.name, text: payload.text, time: payload.time, me:false});
+  });
+
+  // handle witness-added duplicate-safe
+  window._sync.on('witness-added', ({payload})=>{
+    if(!payload || !payload.name) return;
+    if(!witnesses.includes(payload.name)){
+      witnesses.push(payload.name);
+      renderWitnesses();
+    }
+  });
+
+  // handle certificate-generated announcements (optional UI)
+  window._sync.on('certificate-generated', ({payload})=>{
+    console.info('peer generated certificate', payload);
+    // optional: show a small notice — left as an exercise
+  });
+
+  // ensure host/step sync if someone tries to take actions
+  // When ceremony-state with finished arrives, switch UI
+  window._sync.on('ceremony-state', ({payload})=>{
+    if(payload.started){
+      joinArea.style.display='none';
+      lobbyArea.style.display='none';
+      ceremonyArea.style.display='block';
+    }
+    if(payload.stepIndex !== undefined){
+      localStep = payload.stepIndex;
+      renderSteps(localStep);
+      currentStepTitle.textContent = steps[localStep];
+      stepSubtitle.textContent = `Step ${localStep+1} of ${steps.length}`;
+    }
+    if(payload.finished){
+      celebrate();
+    }
+  });
+
+  // small utility: generate certificate PDF using jsPDF
+  async function generateCertificate(couple, date, witnessNames){
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({unit:'pt', format:'a4'});
+    const pageW = doc.internal.pageSize.getWidth();
+    // background flourish
+    doc.setFillColor(248, 231, 238);
+    doc.rect(0,0,pageW,800,'F');
+
+    doc.setFontSize(28);
+    doc.setTextColor(184,91,122);
+    doc.text('Marriage Certificate', pageW/2, 120, {align:'center'});
+
+    doc.setFontSize(14);
+    doc.setTextColor(50,50,50);
+    const body = `This certifies that ${couple} were united in marriage on ${date}.\n\nMay their lives be filled with love and joy.`;
+    const split = doc.splitTextToSize(body, pageW - 120);
+    doc.text(split, 60, 180);
+
+    doc.setFontSize(12);
+    doc.text('Witnesses:', 60, 260);
+    let y = 280;
+    witnessNames.forEach(w => {
+      doc.text('- ' + w, 80, y);
+      y += 18;
+    });
+
+    // certificate id + timestamp
+    const certId = 'CERT-' + Math.random().toString(36).slice(2,9).toUpperCase();
+    doc.setFontSize(10);
+    doc.text(`Certificate ID: ${certId}`, 60, y+18);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 60, y+36);
+
+    // signature placeholders
+    doc.setLineWidth(0.8);
+    doc.line(pageW - 260, y+10, pageW - 60, y+10);
+    doc.text('Officiant', pageW - 250, y+26);
+
+    // save the file
+    doc.save(`certificate-${certId}.pdf`);
+  }
+
+  /* ====================
+     Celebration (confetti)
+     ==================== */
+  (function initConfetti(){
+    const canvas = document.getElementById('confetti');
+    const ctx = canvas.getContext('2d');
+    let particles = [];
+    let animId = null;
+
+    function resize(){
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    function makeParticles(){
+      particles = [];
+      for(let i=0;i<180;i++){
+        particles.push({
+          x: Math.random()*canvas.width,
+          y: Math.random()*-canvas.height,
+          r: Math.random()*8+4,
+          dx: Math.random()*4-2,
+          dy: Math.random()*4+2,
+          color: `hsl(${Math.floor(Math.random()*360)}, 75%, 60%)`,
+          rot: Math.random()*360,
+          dr: Math.random()*6-3
+        });
+      }
+    }
+
+    function draw(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      particles.forEach(p=>{
+        p.x += p.dx; p.y += p.dy; p.rot += p.dr;
+        ctx.save();
+        ctx.translate(p.x,p.y);
+        ctx.rotate(p.rot*Math.PI/180);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.r/2, -p.r/2, p.r, p.r*0.6);
+        ctx.restore();
+      });
+      particles = particles.filter(p => p.y < canvas.height + 50);
+      if(particles.length === 0){
+        cancelAnimationFrame(animId);
+        animId = null;
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        return;
+      }
+      animId = requestAnimationFrame(draw);
+    }
+
+    window.celebrate = function(){
+      makeParticles();
+      if(!animId) draw();
+    };
+  })();
+
+  // small accessibility: announce new chat messages (screen readers)
+  // left as optional
+})();
+</script>
+</body>
+</html>
